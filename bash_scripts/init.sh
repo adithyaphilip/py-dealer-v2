@@ -12,8 +12,11 @@ CLIENT_PY_ARGS="10.10.1.1 $1"
 LOCAL_RESULTS_FOLDER="client_results"
 PSSH_OPTIONS="-O UserKnownHostsFile=/dev/null -O StrictHostKeyChecking=no -p 100000"
 SSH_OPTIONS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
+USER_NAME="aphilip"
 
-# parallel ssh and create the initial folder
+# parallel ssh and 1. change shell to bash
+parallel-ssh $PSSH_OPTIONS -h input_files/clients "sudo chsh -s /bin/bash $USER_NAME;"
+# 2. create the initial folder
 parallel-ssh $PSSH_OPTIONS -h input_files/clients "rm -Rf $ROOT_NAME; mkdir $ROOT_NAME && mkdir $ROOT_NAME/$RESULTS_FOLDER && mkdir $ROOT_NAME/$STDOUT_ERR_FOLDER"
 status=$?
 if [ $status -ne 0 ]; then
