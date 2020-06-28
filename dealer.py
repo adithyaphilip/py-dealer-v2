@@ -9,10 +9,10 @@ def init_clients(port: int):
     subprocess.call("bash ./bash_scripts/init.sh %d" % port, shell=True)
 
 
-def start_server(port: int, cmd_list: List[str]):
+def start_server(ip: str, port: int, cmd_list: List[str]):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.bind(('', port))
+    s.bind((ip, port))
     s.listen(1000)
     for cmd in cmd_list:
         if not cmd:
@@ -23,6 +23,7 @@ def start_server(port: int, cmd_list: List[str]):
         conn.sendall(cmd.encode())
         conn.close()
 
+    print("We've finished assigning all the commands we have to machines! Now we just need to wait for the results")
     # we have finished sending all commands, now we just accept connections and close them
     # this is a signal to clients that we have no more commands to distribute
     while True:
@@ -36,13 +37,14 @@ def get_cmd_list():
 
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: dealer.py SERVER_PORT")
+    if len(sys.argv) != 3:
+        print("Usage: dealer.py SERVER_LISTEN_IP SERVER_PORT")
         exit(1)
 
-    port = int(sys.argv[1])
+    ip = sys.argv[1]
+    port = int(sys.argv[2])
     cmd_list = get_cmd_list()
-    server_th = th.Thread(target=start_server, args=(port, cmd_list), daemon=True)
+    server_th = th.Thread(target=start_server, args=(ip, port, cmd_list), daemon=True)
     server_th.start()
 
     init_clients(port)  # this function will return only once all the clients have finished executing all the commands
