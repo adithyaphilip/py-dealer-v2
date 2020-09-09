@@ -38,8 +38,9 @@ def fetch_new_cmd(dealer_ip: str, port: int):
 
 def exec_cmd(cmd: str, semaphore: th.BoundedSemaphore):
     # execute the command, and release the semaphore when we are done
-    with open(_STDOUT_ERR_FOLDER + "/" + cmd[cmd.index("--nodes"):] + ".out", "w") as stdout_f:
-        with open(_STDOUT_ERR_FOLDER + '/' + cmd[cmd.index("--nodes"):] + ".err", "w") as stderr_f:
+    with open(_STDOUT_ERR_FOLDER + "/" + cmd[cmd.index("--nodes"):-1].replace("--", "_").replace("=", '_') + ".out", "w") as stdout_f:
+        with open(_STDOUT_ERR_FOLDER + '/' + cmd[cmd.index("--nodes"):-1
+                                             ].replace("--", "_").replace("=", '_') + ".err", "w") as stderr_f:
             print("Executing command " + cmd)
             subprocess.call(cmd, shell=True, stdout=stdout_f, stderr=stderr_f)
             semaphore.release()
