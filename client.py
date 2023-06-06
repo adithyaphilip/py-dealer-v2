@@ -4,6 +4,7 @@ import threading as th
 import subprocess
 import socket
 import time
+import json
 
 _CON_FAIL_SLEEP_TIME_S = 30
 _STDOUT_ERR_FOLDER = "pydealer-client-stdouterr"
@@ -36,32 +37,41 @@ def fetch_new_cmd(dealer_ip: str, port: int):
             time.sleep(_CON_FAIL_SLEEP_TIME_S)
 
 
-def exec_cmd(cmd: str, semaphore: th.BoundedSemaphore):
+def exec_cmd(cmd: str, semaphore: th.BoundedSemaphore, node_id, cmd_id):
     # execute the command, and release the semaphore when we are done
-    with open(_STDOUT_ERR_FOLDER + "/" + cmd[cmd.index("--nodes"):-1].replace("--", "_").replace("=", '_') + ".out", "w") as stdout_f:
-        with open(_STDOUT_ERR_FOLDER + '/' + cmd[cmd.index("--nodes"):-1
-                                             ].replace("--", "_").replace("=", '_') + ".err", "w") as stderr_f:
+    exp_name = f"pydealer_{str(node_id)}_{str(cmd_id)}_{str(time.time()).replace('.', '_')}"
+    with open(f"{_STDOUT_ERR_FOLDER}/{exp_name}.out", "w") as stdout_f:
+        with open(f"{_STDOUT_ERR_FOLDER}/{exp_name}.err", "w") as stderr_f:
             print("Executing command " + cmd)
-            subprocess.call(cmd, shell=True, stdout=stdout_f, stderr=stderr_f)
+            exit_status = subprocess.call(cmd, shell=True, stdout=stdout_f, stderr=stderr_f)
+            with open(f"{_STDOUT_ERR_FOLDER}/{exp_name}.json", "w") as info_f:
+                json.dump({"cmd": cmd, "node_id": node_id, "cmd_id": cmd_id, "exit_status": exit_status,
+                           "exp_name": exp_name}, info_f)
             semaphore.release()
 
 
-def start_cmd_loop(dealer_ip: str, port: int):
-    cores_allowed = mp.cpu_count() - 1
+def start_cmd_loop(dealer_ip: str, port: int, node_id: int, max_parallel: int):
+    cores_allowed = min(mp.cpu_count() - 1, max_parallel)
     # create the semaphore using all but two of the cores
     semaphore = th.BoundedSemaphore(cores_allowed)
-
+    # TODO: Is there a reason we didn't just use a ThreadPool here? Was it so we fetch only one command at a time and in round-robin? Is there a way to do that with a ThreadPool?
+    #  E.g. If we have a queue of jobs lined up in a ThreadPool, and two of them start up simultaneously, they'll make concurrent requests for jobs
     workers = []
-
+    cmd_id = 0
     while True:
         semaphore.acquire()  # can we afford to spawn more processes?
         # yes we can!
-        time.sleep(5) # by waiting five seconds before we fetch each command, we effectively implement a kind of round-robin amongst the client nodes
+        # by waiting five seconds before we fetch each command,
+        # we effectively implement a kind of round-robin amongst the client nodes
+        time.sleep(5)
         cmd = fetch_new_cmd(dealer_ip, port)  # we have the next command!
+        cmd_id += 1
         # Spawn a new thread to spawn a new process to execute that command. Once that processes finishes, the thread
         # will release the semaphore we acquire in the loop
+        # NOTE: It's okay for us to use threads here because we create a new process within the thread, so we
+        # don't suffer from the GIL
         if cmd:
-            worker_th = th.Thread(target=exec_cmd, args=(cmd, semaphore))
+            worker_th = th.Thread(target=exec_cmd, args=(cmd, semaphore, node_id, cmd_id))
             workers.append(worker_th)
             worker_th.start()
         else:  # we will no longer receive any commands, just wait for all existing workers then break
@@ -72,14 +82,17 @@ def start_cmd_loop(dealer_ip: str, port: int):
 
 def main():
     # wakes up knowing which folder to use and who the dealer is
-    if len(sys.argv) != 3:
-        print("Usage: client.py DEALER_SERVER_IP DEALER_SERVER_PORT", file=sys.stderr)
+    print("Arguments:", sys.argv)
+    if len(sys.argv) != 5:
+        print("Usage: client.py DEALER_SERVER_IP DEALER_SERVER_PORT NODE_ID MAX_PARALLEL", file=sys.stderr)
         exit(1)
 
     dealer_ip = sys.argv[1]
     dealer_port = int(sys.argv[2])
+    node_id = int(sys.argv[3])
+    max_parallel = int(sys.argv[4])
     # requests the dealer for commands in a loop until it is full
-    start_cmd_loop(dealer_ip, dealer_port)
+    start_cmd_loop(dealer_ip, dealer_port, node_id, max_parallel)
 
 
 if __name__ == '__main__':
